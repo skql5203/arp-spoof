@@ -197,7 +197,7 @@ void get_sender_mac(pcap_t * pcap,int cnt, char **argv, const char *dev,byte *se
     inet_pton(AF_INET, argv[2 * cnt], src_ip);
     inet_pton(AF_INET, argv[2 * cnt + 1], dst_ip);
 
-    request_broad(pack, src_mac, attacker, src_ip); //(pack, attacker_mac, attacker_ip, sender_ip)
+    request_broad(pack, src_mac, attacker, src_ip); //(pack, attacker_mac, target_ip, sender_ip)에서 (pack, attacker_mac, attacker_ip, sender_ip)로 수정 
     if (pcap == NULL) {
         fprintf(stderr, "pcap_open_live error\n");
         exit(1);
