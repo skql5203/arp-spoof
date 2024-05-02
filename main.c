@@ -404,7 +404,8 @@ int main(int argc, char **argv) {
             }
             else if(ntohs(arp_reply->eth_hdr.ether_type) == ETHERTYPE_ARP){ //arp
                 for (int i = 0; i < pair_cnt; i++){
-                    if ( (!memcmp(&arp_reply->src_ip,sender[i],4) && !memcmp(&arp_reply->dst_ip,target[i],4)) ||  (!memcmp(&arp_reply->src_ip,target[i],4) && !memcmp(&arp_reply->dst_ip,sender[i],4))   ) {
+                    if ( (!memcmp(&arp_reply->src_ip,sender[i],4) && !memcmp(&arp_reply->dst_ip,target[i],4))){
+                        // ||  (!memcmp(&arp_reply->src_ip,target[i],4) && !memcmp(&arp_reply->dst_ip,sender[i],4))   ) {
 
 
                         printf("infect_sender\n");
